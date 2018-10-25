@@ -1,65 +1,178 @@
 package com.reactlibrary;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.os.AsyncTask;
+import android.os.Handler;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ImageView;
+import android.widget.RelativeLayout;
+import com.facebook.react.bridge.Arguments;
+import com.facebook.react.bridge.ReactContext;
+import com.facebook.react.bridge.WritableMap;
+import com.facebook.react.uimanager.events.RCTEventEmitter;
+import com.reactlibrary.lib.ScrathImageView;
+import android.util.Base64;
+import android.util.Log;
 
-import com.facebook.react.bridge.ReadableMap;
-import com.facebook.react.common.MapBuilder;
-import com.facebook.react.uimanager.SimpleViewManager;
-import com.facebook.react.uimanager.ThemedReactContext;
-import com.facebook.react.uimanager.annotations.ReactProp;
-import java.util.Map;
+import java.io.InputStream;
 
-public class RNScratchImageViewManager extends SimpleViewManager<RNScrathViewMain> {
+public class RNScrathViewMain extends RelativeLayout {
+    private ImageView imageScratched;
+    private ScrathImageView imagePattern;
+    private boolean imagePatternLoadEnd = false;
+    private boolean imageScratchedLoadEnd = false;
+    private boolean isImageScratchRevealed = false;
+    private float revealPercent = 98.00f;
 
-    public static final String REACT_CLASS = "RNScratchImageView";
-    public static final String ON_REVEAL_PERCENT_CHANGED = "ON_REVEAL_PERCENT_CHANGED";
-    public static final String ON_REVEALED = "ON_REVEALED";
-    private Context _context;
+    public RNScrathViewMain(Context context) {
+        super(context);
 
-    @Override
-    public String getName() {
-        return REACT_CLASS;
+        this.setLayoutParams(new android.view.ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        this.imageScratched = new ImageView(context);
+        this.imageScratched.setLayoutParams(new android.view.ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        this.addView(imageScratched);
+
+        this.imagePattern = new ScrathImageView(context);
+        this.imagePattern.setLayoutParams(new android.view.ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        this.addView(imagePattern);
+
+        imageScratched.setVisibility(INVISIBLE);
+        imagePattern.setVisibility(View.INVISIBLE);
+
+        imagePattern.setOnScratchCallback(new ScrathImageView.OnScratchCallback() {
+            @Override
+            public void onScratch(float percentage) {
+                ReactContext reactContext = (ReactContext) getContext();
+                if (reactContext != null) {
+                    if (percentage >= revealPercent) {
+                        if(!isImageScratchRevealed) {
+                            isImageScratchRevealed = true;
+
+                            WritableMap event = Arguments.createMap();
+                            reactContext.getJSModule(RCTEventEmitter.class).receiveEvent(
+                                    getId(),
+                                    RNScratchImageViewManager.ON_REVEALED,
+                                    event);
+                        }
+                    } else {
+                        WritableMap event = Arguments.createMap();
+                        // Limitamos a dos decimales. Ej: 2.33
+                        event.putDouble("value", Math.round(percentage * 100d) / 100d);
+                        reactContext.getJSModule(RCTEventEmitter.class).receiveEvent(
+                                getId(),
+                                RNScratchImageViewManager.ON_REVEAL_PERCENT_CHANGED,
+                                event);
+                    }
+                }
+            }
+            @Override
+            public void onDetach(boolean fingerDetach) {
+                imageScratched.setVisibility(VISIBLE);
+            }
+        });
     }
 
-   @Override
-    public RNScrathViewMain createViewInstance(ThemedReactContext context) {
-        this._context = context;
-
-       return new RNScrathViewMain(_context);
+    public void setRevealPercent(float percent) {
+        this.revealPercent = percent;
     }
 
-    @ReactProp(name = "revealPercent")
-    public void setRevealPercent(final RNScrathViewMain view, float value) {
-        if (view != null) {
-            view.setRevealPercent(value);
+    public void setRevealSize(int revealSize) {
+        this.imagePattern.setRevealSize(revealSize);
+    }
+
+    public void setImageScratched(String uri) {
+        new DownloadImageTask(true)
+                .execute(uri);
+    }
+
+    public void setImagePattern(String uri) {
+        new DownloadImageTask(false)
+                .execute(uri);
+    }
+
+    private class DownloadImageTask extends AsyncTask<String, Void, Bitmap> {
+        boolean isImageScratched;
+
+        public DownloadImageTask(boolean imageScratched) {
+            this.isImageScratched = imageScratched;
+        }
+
+        protected Bitmap doInBackground(String... urls) {
+            String urldisplay = urls[0];
+            Bitmap mIcon11 = null;
+             Log.d("urldisplay",urldisplay);
+            if(urldisplay.contains("base64,")){
+              try {
+              mIcon11 = base64ToBitmap(urldisplay.split("base64,")[1]);
+              }catch(Exception e){
+               e.printStackTrace();
+              }
+
+            }else{
+            try {
+                InputStream in = new java.net.URL(urldisplay).openStream();
+                mIcon11 = BitmapFactory.decodeStream(in);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+           }
+            return mIcon11;
+        }
+
+        protected void onPostExecute(Bitmap result) {
+
+            if(result == null)
+            return;
+
+            if(isImageScratched) {
+                imageScratched.setImageBitmap(scaleBitmap(result, getWidth(), getHeight()));
+                imageScratchedLoadEnd = true;
+            } else {
+                imagePattern.setScratchBitmap(result);
+                imagePatternLoadEnd = true;
+                imagePattern.setVisibility(VISIBLE);
+            }
+
+            if(imageScratchedLoadEnd && imagePatternLoadEnd) {
+                imagePattern.setVisibility(VISIBLE);
+
+                // Retraso un poco la imagen de fondo, porque la imagePattern tarda un poco en cargarla
+                final Handler handler = new Handler();
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        imageScratched.setVisibility(VISIBLE);
+                    }
+                }, 300);
+
+            }
         }
     }
 
-    @ReactProp(name = "strokeWidth")
-    public void setStrokeWidth(final RNScrathViewMain view, int value) {
-        if (view != null) {
-            view.setRevealSize(value * 4);
-        }
-    }
 
-    @ReactProp(name = "imageScratched")
-    public void setImageScratched(final RNScrathViewMain view, final ReadableMap value) {
-        if (view != null) {
-            view.setImageScratched(value.getString("uri"));
-        }
-    }
+    	private static Bitmap base64ToBitmap(String base64Data) {
+    		byte[] bytes = Base64.decode(base64Data, Base64.DEFAULT);
+    		return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
 
-    @ReactProp(name = "imagePattern")
-    public void setImagePattern(final RNScrathViewMain view, final ReadableMap value) {
-        if (view != null) {
-            view.setImagePattern(value.getString(("uri")));
-        }
-    }
+       }
 
-   public Map getExportedCustomBubblingEventTypeConstants() {
-        return MapBuilder.builder()
-                .put(ON_REVEAL_PERCENT_CHANGED, MapBuilder.of("phasedRegistrationNames", MapBuilder.of("bubbled", "onRevealPercentChanged")))
-                .put(ON_REVEALED, MapBuilder.of("phasedRegistrationNames", MapBuilder.of("bubbled", "onRevealed")))
-                .build();
+    private static Bitmap scaleBitmap(Bitmap bitmap, int maxWidth, int maxHeight) {
+        Bitmap output = Bitmap.createBitmap(maxWidth, maxHeight, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(output);
+        Matrix m = new Matrix();
+        m.setScale((float) maxWidth / bitmap.getWidth(), (float) maxHeight / bitmap.getHeight());
+        canvas.drawBitmap(bitmap, m, new Paint());
+
+        return output;
     }
 }
