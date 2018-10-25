@@ -110,7 +110,7 @@ public class RNScrathViewMain extends RelativeLayout {
         protected Bitmap doInBackground(String... urls) {
             String urldisplay = urls[0];
             Bitmap mIcon11 = null;
-             Log.d("urldisplay",urldisplay);
+            
             if(urldisplay.contains("base64,")){
               try {
               mIcon11 = base64ToBitmap(urldisplay.split("base64,")[1]);
