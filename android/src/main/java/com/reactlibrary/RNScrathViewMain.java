@@ -17,6 +17,8 @@ import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.uimanager.events.RCTEventEmitter;
 import com.reactlibrary.lib.ScrathImageView;
+import android.util.Base64;
+import android.util.Log;
 
 import java.io.InputStream;
 
@@ -108,22 +110,37 @@ public class RNScrathViewMain extends RelativeLayout {
         protected Bitmap doInBackground(String... urls) {
             String urldisplay = urls[0];
             Bitmap mIcon11 = null;
+             Log.d("urldisplay",urldisplay);
+            if(urldisplay.contains("base64,")){
+              try {
+              mIcon11 = base64ToBitmap(urldisplay.split("base64,")[1]);
+              }catch(Exception e){
+               e.printStackTrace();
+              }
+
+            }else{
             try {
                 InputStream in = new java.net.URL(urldisplay).openStream();
                 mIcon11 = BitmapFactory.decodeStream(in);
             } catch (Exception e) {
                 e.printStackTrace();
             }
+           }
             return mIcon11;
         }
 
         protected void onPostExecute(Bitmap result) {
+
+            if(result == null)
+            return;
+
             if(isImageScratched) {
                 imageScratched.setImageBitmap(scaleBitmap(result, getWidth(), getHeight()));
                 imageScratchedLoadEnd = true;
             } else {
                 imagePattern.setScratchBitmap(result);
                 imagePatternLoadEnd = true;
+                imagePattern.setVisibility(VISIBLE);
             }
 
             if(imageScratchedLoadEnd && imagePatternLoadEnd) {
@@ -141,6 +158,13 @@ public class RNScrathViewMain extends RelativeLayout {
             }
         }
     }
+
+
+    	private static Bitmap base64ToBitmap(String base64Data) {
+    		byte[] bytes = Base64.decode(base64Data, Base64.DEFAULT);
+    		return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+
+       }
 
     private static Bitmap scaleBitmap(Bitmap bitmap, int maxWidth, int maxHeight) {
         Bitmap output = Bitmap.createBitmap(maxWidth, maxHeight, Bitmap.Config.ARGB_8888);
